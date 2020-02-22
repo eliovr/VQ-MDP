@@ -6,40 +6,36 @@ import dash_core_components as dcc
 from dash.exceptions import PreventUpdate
 from dash.dependencies import Input, Output
 
-# import pandas as pd
 
 class Sampler:
     def __init__(self, data):
-        # ---- State
         self.spawns = []
         self.data = data
-        self.relayout = None
         self.sample_count = 0
         self.sampling_time = 0
+        self.state = ''
 
-        # ---- Parameters
-        self.sample_size = 1000
+        self.sample_size = 500
         self.sample_frequency = .1
 
-        self.controls = html.Div(id='sampler-controls', style={'margin': '10px'}, children=[
-            html.Div(className='card', children=[
-                html.Div(className='card-header', children='Sampler'),
-                html.Div(className='card-body', children=[
-                    html.Div(className='form-group', children=[
-                        html.Label('Sample size (thousand points)', className='small'),
-                        dcc.Slider(id='sample-size', value=self.sample_size,
-                            min=50, max=10000, step=50,
-                            marks={x: '{}'.format(x/1000) for x in range(0, 12000, 2000)})
-                    ]),
-                    html.Div(className='form-group', children=[
-                        html.Label('Sample frequency (seconds)', className='small'),
-                        dcc.Slider(id='sample-frequency', value=self.sample_frequency,
-                            min=0, max=1, step=.05,
-                            marks={x: '{}'.format(x) for x in range(0, 2)})
-                    ]),
-                    html.Div(id='sampler-message', children='', className='alert alert-warning small', style={'display': 'none'})
-                ]),
-            ])
+        self.controls = html.Div(id='sampler-controls', className='ml-2', children=[
+            html.Button(type='button', className='btn btn-info dropdown-toggle btn-sm', **{'data-toggle': 'dropdown'}, children=[
+                html.Span(className='glyphicon glyphicon-cog', children='Sampler')
+            ]),
+            html.Ul(className='dropdown-menu w-50', children=[
+                html.Li(className='dropdown-header', children='Sample size (# of points)'),
+                html.Li(children=dcc.Slider(
+                    id='sample-size', value=self.sample_size,
+                    min=0, max=4000, step=50,
+                    marks={x: '{}K'.format(x/1000) for x in range(0, 5000, 1000)})),
+
+                html.Li(className='dropdown-header', children='Sample frequency'),
+                html.Li(children=dcc.Slider(
+                    id='sample-frequency', value=self.sample_frequency,
+                    min=0, max=1, step=.05,
+                    marks={x/10: '{}'.format(x/10) for x in range(0, 12, 2)}))
+            ]),
+            html.Div(id='sampler-message', children='', className='alert alert-warning small', style={'display': 'none'})
         ])
 
 
@@ -52,32 +48,33 @@ class Sampler:
             x = self.data.sample(n=self.sample_size).values
             self.sampling_time += time.time()
             self.sample_count += 1
+            self.state = 'samples: {}; spawns: {}'.format(self.sample_count, len(self.spawns))
             return x
         else:
+            self.state = 'Data points ({}) < sample size ({}); spawns: {}'.format(len(self.data.index), self.sample_size, len(self.spawns))
             return self.data.values
 
-    def state(self):
-        return 'Samples taken: {}'.format(self.sample_count)
-
     def reset(self):
+        self.sample_count = 0
+        self.sampling_time = 0
         if len(self.spawns) > 0:
             self.unspawn()
 
-    def spawn(self, data, relayoutData):
+    def spawn(self, data):
         self.spawns.append(dict(
             data = self.data,
-            relayout = self.relayout
+            sample_count = self.sample_count
         ))
 
         self.data = data
-        self.relayout = relayoutData
+        self.sample_count = 0
         return self
 
     def unspawn(self):
         if len(self.spawns) > 0:
             parent = self.spawns.pop()
             self.data = parent['data']
-            self.relayout = parent['relayout']
+            self.sample_count = parent['sample_count']
         return self
 
     def register_listener(self, app):
