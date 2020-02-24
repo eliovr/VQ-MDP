@@ -12,7 +12,6 @@ class MiniBatchKMeans:
         self.spawns = []
         self.fitting_time = 0
         self.sample_count = 0
-        self.state = ''
 
         self.optimizer = cluster.MiniBatchKMeans(
             n_clusters=300,
@@ -58,10 +57,8 @@ class MiniBatchKMeans:
             self.optimizer = self.optimizer.partial_fit(sample)
             self.fitting_time += time.time() - start
             self.sample_count += 1
-            self.state = 'avg fitting time: {:10.2f}s; spawns: {}'.format(self.fitting_time/self.sample_count, len(self.spawns))
             return self.get_prototypes()
         else:
-            self.state = 'Sample size ({}) < prototypes ({}). No fitting took place.'.format(len(sample), self.optimizer.n_clusters)
             return sample
 
     def reset(self):
@@ -75,6 +72,12 @@ class MiniBatchKMeans:
 
     def get_prototypes(self):
         return self.optimizer.cluster_centers_
+
+    def get_state(self):
+        if self.sample_count > 0:
+            return 't: {:10.2f}s'.format(self.fitting_time/self.sample_count)
+        else:
+            return 't: 0.0s'
 
     def spawn(self):
         self.spawns.append(dict(

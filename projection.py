@@ -115,17 +115,41 @@ class ReachabilityPlot:
         self.mdp_time = 0
         self.mdp_counts = 0
         self.layout = dict(
-            width = 800,
-            margin = {'l': 0}
+            width = 750, height = 280,
+            margin = {'l': 0, 't': 0},
+            xaxis={'showticklabels': False, 'zeroline': False},
+            dragmode='lasso'
         )
+        self.controls = html.Div(id='reachabilityplot-controls', className='ml-2', children=[
+            html.Button(type='button', className='btn btn-info dropdown-toggle btn-sm', **{'data-toggle': 'dropdown'}, children=[
+                html.Span(className='glyphicon glyphicon-cog', children='Reachability plot')
+            ]),
+            html.Ul(className='dropdown-menu w-50', children=[
+                html.Li(className='dropdown-header', children='Distance metric'),
+                html.Li(className='stop-propagation', children=[dcc.Dropdown(
+                    id='reachplot-metric',
+                    style={'padding': '0 15px 0 15px'},
+                    options=[
+                        {'label': 'Euclidean', 'value': 'euclidean'},
+                        {'label': 'Manhattan', 'value': 'manhattan'},
+                        {'label': 'Cosine', 'value': 'cosine'}
+                    ],
+                    value='euclidean')]),
+                html.Li(className='dropdown-header', children='Xi'),
+                html.Li(children=dcc.Slider(
+                    id='reachplot-xi', value=.05,
+                    min=0, max=1, step=.05,
+                    marks={x/10: '{}'.format(x/10) for x in range(0, 10, 2)}))
+            ]),
+            html.Div(id='reachplot-message', children='', className='alert alert-warning small', style={'display': 'none'})
+        ])
 
     def abstract(self, prototypes):
         self.model = self.mdp.fit(prototypes)
         return self.model.reachability_[self.model.ordering_]
 
     def view(self, projection, selected_data):
-        # indices = np.arange(0, projection.size)
-        indices = np.arange(0, len(projection))
+        indices = np.arange(0, len(projection))[self.model.ordering_]
 
         figure_data = {
             'data': [go.Bar(
@@ -135,8 +159,7 @@ class ReachabilityPlot:
         }
 
         if len(selected_data) > 0:
-            ordered_indices = indices[self.model.ordering_]
-            selection = np.where(np.isin(ordered_indices, selected_data))
+            selection = np.where(np.isin(indices, selected_data))
             figure_data['data'][0]['selectedpoints'] = selection[0]
 
         return figure_data
@@ -152,24 +175,35 @@ class ReachabilityPlot:
         return self.view(self.data, selected_data), self.get_state()
 
     def get_state(self):
-        return ''
+        if self.mdp_counts > 0:
+            return 't: {:10.2f}s'.format(self.mdp_time/self.mdp_counts)
+        else:
+            return 't: 0.0s'
 
     def register_listener(self, app):
-        pass
+        @app.callback(Output('reachplot-message', 'children'),
+            [Input('reachplot-metric', 'value'),
+            Input('reachplot-xi', 'value')])
+        def controls_listener(metric, xi):
+            self.mdp.set_params(metric=metric, xi=xi)
+            return 'params: {}'.format(self.mdp.get_params())
 
 
 class ParallelCoordinates:
     def __init__(self):
         self.data = []
         self.layout = dict(
-            width = 800,
-            margin = {'l': 0}
+            width = 750, height = 300,
+            margin = {'l': 0, 't': 0},
+            xaxis_tickformat = '{:10.1f}'
         )
         self.controls = html.Div()
 
 
     def abstract(self, prototypes):
-        return np.transpose(prototypes[:, :20])
+        _, n_dim = prototypes.shape
+        n_dim = min(n_dim, 20)      # for the sake of testing.
+        return np.transpose(prototypes[:, :n_dim])
 
     def view(self, dimensions, selected_data):
         indices = []

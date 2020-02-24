@@ -62,36 +62,40 @@ app.layout = html.Div(className='container', style={'margin-top': '10px'}, child
     ]),
 
     html.Div(className='row', children=[
-        html.Div(id='controls', className='form-inline col-5', children=[
+        html.Div(id='controls', className='form-inline col-7', children=[
             html.Div(className='btn-group', children=[
                 html.Button('Reset', id='button-reset', type='button', className='btn btn-light', n_clicks=0),
                 html.Button('Run', id='button-run', type='button', className='btn btn-secondary', n_clicks=0)
             ]),
-            sampler.controls, quantizer.controls, scatterplot.controls
-        ]),
-        html.Div(id='state', className='col-7', children=[
-            html.Div(id='message-board', children='', className='alert alert-warning small')
+            sampler.controls, quantizer.controls, scatterplot.controls, reachplot.controls
         ])
     ]),
 
     html.Div(id='graphs', className='row', children=[
-        html.Div(className='col-5', children=[
+        html.Div(className='col-6', children=[
             dcc.Graph(id='scatterplot-graph', figure={'layout': scatterplot.layout})]),
-        html.Div(className='col-7', children=[
-            dcc.Graph(id='parcoor-graph', figure={'layout': reachplot.layout})])
+
+        html.Div(className='col-6', children=[
+            dcc.Graph(id='reachplot-graph', style={'height': '250px'}, figure={'layout': reachplot.layout}),
+            dcc.Graph(id='parcoor-graph', figure={'layout': parcoor.layout})
+        ])
         # html.Div(className='col-7', children=[
         #     dcc.Graph(id='parcoor-graph', figure={'layout': parcoor.layout})])
+    ]),
+
+    html.Div(id='state', className='col-7', children=[
+        html.Div(id='message-board', children='', className='alert alert-warning small')
     ])
 ])
 
 sampler.register_listener(app)
 quantizer.register_listener(app)
 scatterplot.register_listener(app)
-# parcoor.register_listener(app)
+parcoor.register_listener(app)
 reachplot.register_listener(app)
 
-def state_message():
-    return 'Sampler: {} | Quantizer: {} | Projection: {}'.format(sampler.state, quantizer.state, scatterplot.state)
+# def state_message():
+#     return 'Sampler: {} | Quantizer: {} | Projection: {}'.format(sampler.get_state(), quantizer.state, scatterplot.state)
 
 @app.callback(
     [Output('button-run', 'children'),
@@ -119,6 +123,7 @@ def btn_reset_clicked(clicks):
 
 @app.callback(
     [Output('scatterplot-graph', 'figure'),
+    Output('reachplot-graph', 'figure'),
     Output('parcoor-graph', 'figure'),
     Output('training-state-container', 'children'),
     Output('message-board', 'children')],
@@ -127,8 +132,10 @@ def btn_reset_clicked(clicks):
 def traing_and_update(hidden_state, selection):
     next_state = dash.no_update
     sp_graph = dash.no_update
+    rp_graph = dash.no_update
     pc_graph = dash.no_update
     sp_state = scatterplot.get_state()
+    rp_state = reachplot.get_state()
     pc_state = parcoor.get_state()
     selected_data = []
 
@@ -139,8 +146,8 @@ def traing_and_update(hidden_state, selection):
         x = sampler.sample()
         m = quantizer.learn(x)
         sp_graph, sp_state = scatterplot.visualize(m, selected_data=selected_data)
-        # pc_graph, pc_state = parcoor.visualize(m, selected_data=selected_data)
-        pc_graph, pc_state = reachplot.visualize(m, selected_data=selected_data)
+        pc_graph, pc_state = parcoor.visualize(m, selected_data=selected_data)
+        rp_graph, rp_state = reachplot.visualize(m, selected_data=selected_data)
 
         if hidden_state == States.TRAIN_UPDATE_LOOP:
             next_state = html.Div(id='hidden-state', children=States.TRAIN_UPDATE_LOOP)
@@ -148,12 +155,13 @@ def traing_and_update(hidden_state, selection):
     # update graph in case of, e.g., user lasso interaction.
     elif sampler.sample_count > 0:
         sp_graph, sp_state = scatterplot.visualize(selected_data=selected_data)
-        pc_graph, pc_state = reachplot.visualize(selected_data=selected_data)
-        # pc_graph, pc_state = parcoor.visualize(selected_data=selected_data)
+        rp_graph, rp_state = reachplot.visualize(selected_data=selected_data)
+        pc_graph, pc_state = parcoor.visualize(selected_data=selected_data)
 
-    state = 'Samples: {}, Old state: {}, new state: {}'.format(sampler.sample_count, hidden_state, next_state)
+    # state = 'Samples: {}, Old state: {}, new state: {}'.format(sampler.sample_count, hidden_state, next_state)
+    state = 'Sampler: {} | Quantizer: {} | Reachplot: {}'.format(sampler.get_state(), quantizer.get_state(), reachplot.get_state())
 
-    return sp_graph, pc_graph, next_state, state
+    return sp_graph, rp_graph, pc_graph, next_state, state
 
 
 @app.callback(
@@ -161,11 +169,12 @@ def traing_and_update(hidden_state, selection):
     Output('dragmode-state', 'children')],
     [Input('scatterplot-graph', 'selectedData'),
     Input('scatterplot-graph', 'relayoutData'),
+    Input('reachplot-graph', 'selectedData'),
     Input('parcoor-graph', 'restyleData')],
     [State('dragmode-state', 'children'),
     State('interaction-state', 'children')])
-def user_interaction(lasso_selection, zoom_selection, parcoor_filter, dragmode, selection_state):
-    selected_data = dash.no_update
+def user_interaction(lasso_selection, zoom_selection, rp_selection, parcoor_filter, dragmode, selection_state):
+    selected_data = '[]'
     dragmode_state = dash.no_update
 
     # user made a lasso selection.
@@ -173,11 +182,16 @@ def user_interaction(lasso_selection, zoom_selection, parcoor_filter, dragmode, 
         selection = [p['customdata'] for p in lasso_selection['points']]
         selected_data = json.dumps(selection)
 
+    elif rp_selection:
+        selection = [p['customdata'] for p in rp_selection['points']]
+        selected_data = json.dumps(selection)
+
     elif zoom_selection:
         # user is changing interaction tool in scatterplot.
         if 'dragmode' in zoom_selection:
             if zoom_selection['dragmode'] != dragmode:
                 dragmode_state = zoom_selection['dragmode']
+            selected_data = dash.no_update
 
         # user is zooming in.
         elif dragmode != 'zoomed-in':

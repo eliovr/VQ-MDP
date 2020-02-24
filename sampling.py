@@ -13,10 +13,9 @@ class Sampler:
         self.data = data
         self.sample_count = 0
         self.sampling_time = 0
-        self.state = ''
 
         self.sample_size = 500
-        self.sample_frequency = .1
+        self.sample_frequency = .05
 
         self.controls = html.Div(id='sampler-controls', className='ml-2', children=[
             html.Button(type='button', className='btn btn-info dropdown-toggle btn-sm', **{'data-toggle': 'dropdown'}, children=[
@@ -48,11 +47,12 @@ class Sampler:
             x = self.data.sample(n=self.sample_size).values
             self.sampling_time += time.time()
             self.sample_count += 1
-            self.state = 'samples: {}; spawns: {}'.format(self.sample_count, len(self.spawns))
             return x
         else:
-            self.state = 'Data points ({}) < sample size ({}); spawns: {}'.format(len(self.data.index), self.sample_size, len(self.spawns))
             return self.data.values
+
+    def get_state(self):
+        return 'samples: {}; spawns: {}'.format(self.sample_count, len(self.spawns))
 
     def reset(self):
         self.sample_count = 0
