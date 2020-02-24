@@ -9,6 +9,7 @@ import dash_core_components as dcc
 from dash.dependencies import Input, Output
 
 from sklearn import decomposition
+from sklearn.cluster import OPTICS
 
 
 class Scatterplot:
@@ -16,10 +17,9 @@ class Scatterplot:
         self.mdp = decomposition.PCA(n_components=2)
         self.point_size = 7
         self.data = np.array([])
-        self.selected_data = []
         self.mdp_time = 0
         self.mdp_counts = 0
-        self.state = ''
+        self.state_str = ''
 
         self.layout = dict(
             xaxis={'showticklabels': False, 'zeroline': False},
@@ -45,10 +45,9 @@ class Scatterplot:
 
     def abstract(self, prototypes):
         projection = self.mdp.fit_transform(prototypes)
-        self.data = np.transpose(projection)
-        return self.data
+        return np.transpose(projection)
 
-    def figure(self, projection):
+    def view(self, projection, selected_data):
         indices = np.arange(0, projection.size)
 
         figure_data = {
@@ -63,23 +62,27 @@ class Scatterplot:
             'layout': self.layout
         }
 
-        if len(self.selected_data) > 0:
-            figure_data['data'][0]['selectedpoints'] = self.selected_data
+        if len(selected_data) > 0:
+            figure_data['data'][0]['selectedpoints'] = selected_data
 
         return figure_data
 
 
-    def visualize(self, prototypes):
-        start = time.time()
-        projection = self.abstract(prototypes)
-        self.mdp_time += time.time() - start
-        self.mdp_counts += 1
-        self.state = 'avg time: {:10.2f}s'.format(self.mdp_time/self.mdp_counts)
-        return self.figure(projection)
+    def visualize(self, prototypes=[], selected_data=[]):
+        if len(prototypes) > 0:
+            start = time.time()
+            self.data = self.abstract(prototypes)
+            self.mdp_time += time.time() - start
+            self.mdp_counts += 1
 
+        return self.view(self.data, selected_data), self.get_state()
 
-    def update(self):
-        return self.figure(self.data)
+    def get_state(self):
+        avg_time = 0
+        if self.mdp_counts > 0:
+            avg_time = self.mdp_time/self.mdp_counts
+
+        return 'avg time: {:10.2f}s'.format(avg_time)
 
     def selected_ids(self, relayout_data):
         """
@@ -104,11 +107,60 @@ class Scatterplot:
             return 'PCA: Nothing to report'
 
 
+class ReachabilityPlot:
+    def __init__(self):
+        self.mdp = OPTICS()
+        self.data = []
+        self.model = None
+        self.mdp_time = 0
+        self.mdp_counts = 0
+        self.layout = dict(
+            width = 800,
+            margin = {'l': 0}
+        )
+
+    def abstract(self, prototypes):
+        self.model = self.mdp.fit(prototypes)
+        return self.model.reachability_[self.model.ordering_]
+
+    def view(self, projection, selected_data):
+        # indices = np.arange(0, projection.size)
+        indices = np.arange(0, len(projection))
+
+        figure_data = {
+            'data': [go.Bar(
+                y = projection,
+                customdata = indices)],
+            'layout': self.layout
+        }
+
+        if len(selected_data) > 0:
+            ordered_indices = indices[self.model.ordering_]
+            selection = np.where(np.isin(ordered_indices, selected_data))
+            figure_data['data'][0]['selectedpoints'] = selection[0]
+
+        return figure_data
+
+
+    def visualize(self, prototypes=[], selected_data=[]):
+        if len(prototypes) > 0:
+            start = time.time()
+            self.data = self.abstract(prototypes)
+            self.mdp_time += time.time() - start
+            self.mdp_counts += 1
+
+        return self.view(self.data, selected_data), self.get_state()
+
+    def get_state(self):
+        return ''
+
+    def register_listener(self, app):
+        pass
+
 
 class ParallelCoordinates:
     def __init__(self):
         self.data = []
-        self.selected_data = []
         self.layout = dict(
             width = 800,
             margin = {'l': 0}
@@ -117,11 +169,9 @@ class ParallelCoordinates:
 
 
     def abstract(self, prototypes):
-        self.data = np.transpose(prototypes[:, :20])
-        return self.data
+        return np.transpose(prototypes[:, :20])
 
-
-    def figure(self, dimensions):
+    def view(self, dimensions, selected_data):
         indices = []
         if len(dimensions) > 0:
             indices = np.arange(0, len(dimensions[0]))
@@ -139,10 +189,10 @@ class ParallelCoordinates:
             'layout': self.layout
         }
 
-        if len(self.selected_data) > 0:
+        if len(selected_data) > 0:
             lines = pd.DataFrame({'key': indices})
             lines['selected'] = 0
-            lines.loc[lines['key'].isin(self.selected_data), 'selected'] = 1
+            lines.loc[lines['key'].isin(selected_data), 'selected'] = 1
             figure_data['data'][0]['line'] = {
                 'color': lines['selected'],
                 'colorscale': [[0, 'lightgray'], [1, 'blue']]
@@ -150,15 +200,14 @@ class ParallelCoordinates:
 
         return figure_data
 
+    def visualize(self, prototypes=[], selected_data=[]):
+        if len(prototypes) > 0:
+            self.data = self.abstract(prototypes)
 
-    def visualize(self, prototypes):
-        dimensions = self.abstract(prototypes)
-        return self.figure(dimensions)
+        return self.view(self.data, selected_data), self.get_state()
 
-
-    def update(self):
-        return self.figure(self.data)
-
+    def get_state(self):
+        return ''
 
     def register_listener(self, app):
         pass
