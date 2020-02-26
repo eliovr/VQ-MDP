@@ -4,9 +4,12 @@ import dash_html_components as html
 from dash.exceptions import PreventUpdate
 from dash.dependencies import Input, Output, State
 
-from sampling import Sampler
+from sampling import PandasSampler, SparkSampler
 from quantization import MiniBatchKMeans
 from projection import Scatterplot, ParallelCoordinates, ReachabilityPlot
+
+from pyspark.sql import SparkSession
+from pyspark.sql.types import *
 
 import pandas as pd
 import numpy as np
@@ -19,8 +22,16 @@ class States:
     TRAIN_UPDATE_ONCE = 2
     UPDATE_STOP = 3
 
-data = pd.read_csv('/home/elio/apps/notebooks/data/isolet.csv', header=None)
-sampler = Sampler(data=data)
+# data = pd.read_csv('/home/elio/apps/notebooks/data/isolet.csv', header=None)
+
+spark = SparkSession.builder.appName("VQ-MDP").getOrCreate()
+
+data_path = '/home/elio/datasets/gas_sensor_parquet3'
+data = spark.read.parquet(data_path)
+# data = spark.read.parquet(data_path).rdd.map(lambda r: np.array(list(r.asDict().values())))
+
+# sampler = Sampler(data=data)
+sampler = SparkSampler(data=data)
 quantizer = MiniBatchKMeans()
 scatterplot = Scatterplot()
 parcoor = ParallelCoordinates()
@@ -79,11 +90,9 @@ app.layout = html.Div(className='container', style={'margin-top': '10px'}, child
             dcc.Graph(id='reachplot-graph', style={'height': '250px'}, figure={'layout': reachplot.layout}),
             dcc.Graph(id='parcoor-graph', figure={'layout': parcoor.layout})
         ])
-        # html.Div(className='col-7', children=[
-        #     dcc.Graph(id='parcoor-graph', figure={'layout': parcoor.layout})])
     ]),
 
-    html.Div(id='state', className='col-7', children=[
+    html.Div(id='state', className='col-12', children=[
         html.Div(id='message-board', children='', className='alert alert-warning small')
     ])
 ])
@@ -94,8 +103,6 @@ scatterplot.register_listener(app)
 parcoor.register_listener(app)
 reachplot.register_listener(app)
 
-# def state_message():
-#     return 'Sampler: {} | Quantizer: {} | Projection: {}'.format(sampler.get_state(), quantizer.state, scatterplot.state)
 
 @app.callback(
     [Output('button-run', 'children'),
@@ -158,8 +165,7 @@ def traing_and_update(hidden_state, selection):
         rp_graph, rp_state = reachplot.visualize(selected_data=selected_data)
         pc_graph, pc_state = parcoor.visualize(selected_data=selected_data)
 
-    # state = 'Samples: {}, Old state: {}, new state: {}'.format(sampler.sample_count, hidden_state, next_state)
-    state = 'Sampler: {} | Quantizer: {} | Reachplot: {}'.format(sampler.get_state(), quantizer.get_state(), reachplot.get_state())
+    state = 'Sampler: {} | Quantizer: {} | MDS: {} | Reachplot: {}'.format(sampler.get_state(), quantizer.get_state(), scatterplot.get_state(), reachplot.get_state())
 
     return sp_graph, rp_graph, pc_graph, next_state, state
 
@@ -201,7 +207,8 @@ def user_interaction(lasso_selection, zoom_selection, rp_selection, parcoor_filt
             # user is zooming in.
             if 'xaxis.range[0]' in zoom_selection:
                 selected_ks = scatterplot.selected_ids(zoom_selection)
-                zoomed_data = quantizer.predict_select(sampler.data, selected_ks)
+                # zoomed_data = quantizer.predict_select(sampler.data, selected_ks)
+                zoomed_data = quantizer.predict_select_spark(sampler.data, selected_ks)
                 sampler.spawn(zoomed_data)
                 quantizer.spawn()
 

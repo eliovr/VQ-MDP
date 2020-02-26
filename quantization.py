@@ -4,8 +4,15 @@ import dash_core_components as dcc
 from dash.dependencies import Input, Output
 
 from sklearn import cluster
+from sklearn.metrics.pairwise import euclidean_distances
+
+from pyspark.sql.functions import udf
+from pyspark.sql.functions import *
+from pyspark.sql.types import BooleanType
+
 import pandas as pd
 import numpy as np
+from numpy.linalg import norm
 
 class MiniBatchKMeans:
     def __init__(self):
@@ -14,8 +21,8 @@ class MiniBatchKMeans:
         self.sample_count = 0
 
         self.optimizer = cluster.MiniBatchKMeans(
-            n_clusters=300,
-            random_state=0,
+            n_clusters=200,
+            random_state=None,
             batch_size=500,
             reassignment_ratio=.01)
 
@@ -45,7 +52,6 @@ class MiniBatchKMeans:
             html.Div(id='kmeans-message', children='', className='alert alert-warning small', style={'display': 'none'})
         ])
 
-
     def learn(self, sample):
         """
         Runs the vector quantization on the sample, and returns the fitted prototypes.
@@ -65,19 +71,29 @@ class MiniBatchKMeans:
         """
         Clears the values of the partially trained model.
         """
-        if len(self.spawns) > 0:
-            self.unspawn()
-        else:
-            self.optimizer = cluster.MiniBatchKMeans(**self.optimizer.get_params(deep=False))
+        self.optimizer = cluster.MiniBatchKMeans(**self.optimizer.get_params(deep=False))
 
     def get_prototypes(self):
-        return self.optimizer.cluster_centers_
+        """
+        Returns the array of (latest trained) prototypes. I remove the two prototypes
+        with the lowest and highest L2-norm. It is an uggly thing but, for some reason
+        there's always a 'stray' prototypes which messes with the plots.
+        """
+        ks = self.optimizer.cluster_centers_
+        ns = norm(ks, axis=1)
+        ns = (ns != np.min(ns)) & (ns != np.max(ns))
+        return ks[ns]
+        # return self.optimizer.cluster_centers_
 
     def get_state(self):
+        """
+        Returns a string with a state message.
+        """
         if self.sample_count > 0:
             return 't: {:10.2f}s'.format(self.fitting_time/self.sample_count)
         else:
             return 't: 0.0s'
+
 
     def spawn(self):
         self.spawns.append(dict(
@@ -86,20 +102,37 @@ class MiniBatchKMeans:
         self.optimizer = cluster.MiniBatchKMeans(**self.optimizer.get_params(deep=False))
         return self
 
+
     def unspawn(self):
         if len(self.spawns) > 0:
             parent = self.spawns.pop()
             self.optimizer = parent['optimizer']
         return self
 
+
     def predict(self, data):
         return self.optimizer.predict(data)
+
 
     def predict_select(self, data, select_ks):
         predictions = self.predict(data).reshape(len(data), 1)
         k_data = np.append(predictions, data.values, axis=1)
         k_data = pd.DataFrame(k_data)
         return k_data.loc[k_data[0].isin(select_ks)].drop(0, axis=1)
+
+
+    def predict_select_spark(self, data, select_ks):
+        ks = self.get_prototypes()
+
+        def is_selected(arr):
+            distances = np.sqrt(norm(np.power(arr - ks, 2), axis=1))
+            kid = np.argmin(distances)
+            return (kid in select_ks)
+
+        is_selected_udf = udf(is_selected, BooleanType())
+        cols = data.columns
+        return data.filter(is_selected_udf(array(*cols))).cache()
+
 
     def register_listener(self, app):
         @app.callback(Output('kmeans-message', 'children'),

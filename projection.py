@@ -9,12 +9,15 @@ import dash_core_components as dcc
 from dash.dependencies import Input, Output
 
 from sklearn import decomposition
+from sklearn import manifold
 from sklearn.cluster import OPTICS
 
 
 class Scatterplot:
     def __init__(self):
-        self.mdp = decomposition.PCA(n_components=2)
+        # self.mdp = decomposition.PCA(n_components=2)
+        self.mdp = manifold.MDS(n_components=2, n_init=1, max_iter=100)
+        # self.mdp = manifold.TSNE(n_components=2, n_iter=500)
         self.point_size = 7
         self.data = np.array([])
         self.mdp_time = 0
@@ -34,6 +37,32 @@ class Scatterplot:
                 html.Span(className='glyphicon glyphicon-cog', children='Scatterplot')
             ]),
             html.Ul(className='dropdown-menu w-50', children=[
+                html.Li(className='dropdown-header', children='n init'),
+                html.Li(children=dcc.Slider(
+                    id='mds-ninit', value=self.mdp.get_params()['n_init'],
+                    min=0, max=10, step=1,
+                    marks={x: '{}'.format(x) for x in range(0, 12, 2)})),
+
+                html.Li(className='dropdown-header', children='Iterations'),
+                html.Li(children=dcc.Slider(
+                    id='mds-maxiter', value=self.mdp.get_params()['max_iter'],
+                    min=0, max=500, step=50,
+                    marks={x: '{}'.format(x) for x in range(0, 600, 100)})),
+
+                # html.Li(className='dropdown-header', children='Perplexity'),
+                # html.Li(children=dcc.Slider(
+                #     id='tsne-perplexity', value=self.mdp.get_params()['perplexity'],
+                #     min=5, max=50, step=5,
+                #     marks={x: '{}'.format(x) for x in range(5, 55, 5)})),
+                #
+                # html.Li(className='dropdown-header', children='Learning rate'),
+                # html.Li(children=dcc.Slider(
+                #     id='tsne-learning-rate', value=self.mdp.get_params()['learning_rate'],
+                #     min=0, max=1000, step=100,
+                #     marks={x: '{}'.format(x) for x in range(0, 1200, 200)})),
+
+                html.Li(className='dropdown-divider'),
+
                 html.Li(className='dropdown-header', children='Point size (px)'),
                 html.Li(children=dcc.Slider(
                     id='point-size', value=self.point_size,
@@ -44,8 +73,26 @@ class Scatterplot:
         ])
 
     def abstract(self, prototypes):
-        projection = self.mdp.fit_transform(prototypes)
-        return np.transpose(projection)
+        # --- PCA or MDS.
+        n_prototypes = len(prototypes)
+        if n_prototypes > 0:
+            if len(self.data) == n_prototypes:
+                self.data = self.mdp.fit_transform(prototypes, init=self.data)
+            else:
+                self.data = self.mdp.fit_transform(prototypes)
+
+        return np.transpose(self.data)
+
+        # --- PCA.
+        # projection = self.mdp.fit_transform(prototypes)
+        # return np.transpose(projection)
+
+        # --- TSNE.
+        # if len(self.data) == len(prototypes):
+        #     self.mdp.set_params(init=self.data)
+        # if len(prototypes) > 0:
+        #     self.data = self.mdp.fit_transform(prototypes)
+        # return np.transpose(self.data)
 
     def view(self, projection, selected_data):
         indices = np.arange(0, projection.size)
@@ -54,7 +101,6 @@ class Scatterplot:
             'data': [go.Scatter(
                 x = projection[0], y = projection[1],
                 mode = 'markers',
-                # opacity = .5,
                 customdata = indices,
                 marker = dict(
                     size = self.point_size
@@ -67,15 +113,13 @@ class Scatterplot:
 
         return figure_data
 
-
     def visualize(self, prototypes=[], selected_data=[]):
-        if len(prototypes) > 0:
-            start = time.time()
-            self.data = self.abstract(prototypes)
-            self.mdp_time += time.time() - start
-            self.mdp_counts += 1
+        start = time.time()
+        abstraction = self.abstract(prototypes)
+        self.mdp_time += time.time() - start
+        self.mdp_counts += 1
 
-        return self.view(self.data, selected_data), self.get_state()
+        return self.view(abstraction, selected_data), self.get_state()
 
     def get_state(self):
         avg_time = 0
@@ -93,18 +137,32 @@ class Scatterplot:
         y1 = relayout_data.get('yaxis.range[0]', 0)
         x2 = relayout_data.get('xaxis.range[1]', 0)
         y2 = relayout_data.get('yaxis.range[1]', 0)
-
-        xs = self.data[0]
-        ys = self.data[1]
+        proj = np.transpose(self.data)
+        xs = proj[0]
+        ys = proj[1]
         ks = np.arange(0, len(xs))
         return ks[(xs >= x1) & (xs <= x2) & (ys >= y1) & (ys <= y2)]
 
     def register_listener(self, app):
-        @app.callback(Output('scatterplot-message', 'children'),
-            [Input('point-size', 'value')])
-        def controls_listener(size):
-            self.point_size = size
-            return 'PCA: Nothing to report'
+        @app.callback(
+            Output('scatterplot-message', 'children'),
+            [Input('mds-ninit', 'value'),
+            Input('mds-maxiter', 'value'),
+            Input('point-size', 'value')])
+        def tsne_controls_listener(mds_ninit, mds_maxiter, point_size):
+            self.point_size = point_size
+            self.mdp.set_params(n_init=mds_ninit, max_iter=mds_maxiter)
+            return 'MDS: Nothing to report'
+
+        # @app.callback(
+        #     Output('scatterplot-message', 'children'),
+        #     [Input('tsne-perplexity', 'value'),
+        #     Input('tsne-learning-rate', 'value'),
+        #     Input('point-size', 'value')])
+        # def tsne_controls_listener(tsne_perplexity, tsne_learning_rate, point_size):
+        #     self.point_size = point_size
+        #     self.mdp.set_params(perplexity=tsne_perplexity, learning_rate=tsne_learning_rate)
+        #     return 't-SNE: Nothing to report'
 
 
 class ReachabilityPlot:
@@ -116,7 +174,7 @@ class ReachabilityPlot:
         self.mdp_counts = 0
         self.layout = dict(
             width = 750, height = 280,
-            margin = {'l': 0, 't': 0},
+            margin = {'l': 15, 't': 0},
             xaxis={'showticklabels': False, 'zeroline': False},
             dragmode='lasso'
         )
@@ -127,7 +185,7 @@ class ReachabilityPlot:
             html.Ul(className='dropdown-menu w-50', children=[
                 html.Li(className='dropdown-header', children='Distance metric'),
                 html.Li(className='stop-propagation', children=[dcc.Dropdown(
-                    id='reachplot-metric',
+                    id='optics-metric',
                     style={'padding': '0 15px 0 15px'},
                     options=[
                         {'label': 'Euclidean', 'value': 'euclidean'},
@@ -135,13 +193,20 @@ class ReachabilityPlot:
                         {'label': 'Cosine', 'value': 'cosine'}
                     ],
                     value='euclidean')]),
+
+                html.Li(className='dropdown-header', children='Min samples'),
+                html.Li(children=dcc.Slider(
+                    id='optics-min-samples', value=self.mdp.get_params()['min_samples'],
+                    min=0, max=20, step=1,
+                    marks={x: '{}'.format(x) for x in range(0, 25, 5)})),
+
                 html.Li(className='dropdown-header', children='Xi'),
                 html.Li(children=dcc.Slider(
-                    id='reachplot-xi', value=.05,
+                    id='optics-xi', value=.05,
                     min=0, max=1, step=.05,
-                    marks={x/10: '{}'.format(x/10) for x in range(0, 10, 2)}))
+                    marks={x/10: '{}'.format(x/10) for x in range(0, 12, 2)}))
             ]),
-            html.Div(id='reachplot-message', children='', className='alert alert-warning small', style={'display': 'none'})
+            html.Div(id='optics-message', children='', className='alert alert-warning small', style={'display': 'none'})
         ])
 
     def abstract(self, prototypes):
@@ -164,7 +229,6 @@ class ReachabilityPlot:
 
         return figure_data
 
-
     def visualize(self, prototypes=[], selected_data=[]):
         if len(prototypes) > 0:
             start = time.time()
@@ -181,11 +245,13 @@ class ReachabilityPlot:
             return 't: 0.0s'
 
     def register_listener(self, app):
-        @app.callback(Output('reachplot-message', 'children'),
-            [Input('reachplot-metric', 'value'),
-            Input('reachplot-xi', 'value')])
-        def controls_listener(metric, xi):
-            self.mdp.set_params(metric=metric, xi=xi)
+        @app.callback(
+            Output('optics-message', 'children'),
+            [Input('optics-metric', 'value'),
+            Input('optics-min-samples', 'value'),
+            Input('optics-xi', 'value')])
+        def controls_listener(metric, min_samples, xi):
+            self.mdp.set_params(metric=metric, min_samples=min_samples, xi=xi)
             return 'params: {}'.format(self.mdp.get_params())
 
 
@@ -194,16 +260,19 @@ class ParallelCoordinates:
         self.data = []
         self.layout = dict(
             width = 750, height = 300,
-            margin = {'l': 0, 't': 0},
+            margin = {'l': 15, 't': 0},
             xaxis_tickformat = '{:10.1f}'
         )
         self.controls = html.Div()
 
 
     def abstract(self, prototypes):
-        _, n_dim = prototypes.shape
+        ks = prototypes
+        if type(ks) is list:
+            ks = np.array(ks)
+        _, n_dim = ks.shape
         n_dim = min(n_dim, 20)      # for the sake of testing.
-        return np.transpose(prototypes[:, :n_dim])
+        return np.transpose(ks[:, :n_dim])
 
     def view(self, dimensions, selected_data):
         indices = []
