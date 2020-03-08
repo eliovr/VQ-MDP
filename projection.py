@@ -20,23 +20,24 @@ class Scatterplot:
         # self.mdp = manifold.TSNE(n_components=2, n_iter=500)
         self.point_size = 7
         self.data = np.array([])
-        self.mdp_time = 0
+        self.color_values = []
+        self.exe_time = 0
         self.mdp_counts = 0
         self.state_str = ''
 
         self.layout = dict(
             xaxis={'showticklabels': False, 'zeroline': False},
             yaxis={'showticklabels': False, 'zeroline': False},
-            margin={'l': 20, 'b': 20, 't': 20, 'r': 20},
+            margin={'l': 20, 'b': 15, 't': 20, 'r': 20},
             hovermode='closest',
             dragmode='lasso',
             clickmode='event+select'
         )
-        self.controls = html.Div(id='scatterplot-controls', className='ml-2', children=[
-            html.Button(type='button', className='btn btn-info dropdown-toggle btn-sm', **{'data-toggle': 'dropdown'}, children=[
-                html.Span(className='glyphicon glyphicon-cog', children='Scatterplot')
+        self.controls = html.Div(id='scatterplot-controls', className='input-group input-group-sm ml-2', children=[
+            html.Button(type='button', className='btn btn-info dropdown-toggle form-control', **{'data-toggle': 'dropdown'}, children=[
+                html.Span(className='glyphicon glyphicon-cog', children='MDS')
             ]),
-            html.Ul(className='dropdown-menu w-50', children=[
+            html.Ul(className='dropdown-menu w-100', children=[
                 html.Li(className='dropdown-header', children='n init'),
                 html.Li(children=dcc.Slider(
                     id='mds-ninit', value=self.mdp.get_params()['n_init'],
@@ -69,6 +70,9 @@ class Scatterplot:
                     min=1, max=17, step=1,
                     marks={x: '{}'.format(x) for x in range(1, 18, 2)}))
             ]),
+            html.Div(className='input-group-append', children=[
+                html.Span(id='scatterplot-state', className='input-group-text', children=' - ')
+            ]),
             html.Div(id='scatterplot-message', children='', className='alert alert-warning small', style={'display': 'none'})
         ])
 
@@ -80,21 +84,22 @@ class Scatterplot:
                 self.data = self.mdp.fit_transform(prototypes, init=self.data)
             else:
                 self.data = self.mdp.fit_transform(prototypes)
+            self.color_values = np.var(prototypes, axis=1)
 
-        return np.transpose(self.data)
+        return np.transpose(self.data), self.color_values
 
         # --- PCA.
         # projection = self.mdp.fit_transform(prototypes)
         # return np.transpose(projection)
 
         # --- TSNE.
-        # if len(self.data) == len(prototypes):
+        # if len(self.data) == n_prototypes:
         #     self.mdp.set_params(init=self.data)
-        # if len(prototypes) > 0:
+        # if n_prototypes > 0:
         #     self.data = self.mdp.fit_transform(prototypes)
         # return np.transpose(self.data)
 
-    def view(self, projection, selected_data):
+    def view(self, projection, selected_data=[], color_values=[]):
         indices = np.arange(0, projection.size)
 
         figure_data = {
@@ -103,7 +108,9 @@ class Scatterplot:
                 mode = 'markers',
                 customdata = indices,
                 marker = dict(
-                    size = self.point_size
+                    size = self.point_size,
+                    color = color_values,
+                    colorscale = 'sunsetdark'
                 ))],
             'layout': self.layout
         }
@@ -113,20 +120,27 @@ class Scatterplot:
 
         return figure_data
 
+
     def visualize(self, prototypes=[], selected_data=[]):
         start = time.time()
-        abstraction = self.abstract(prototypes)
-        self.mdp_time += time.time() - start
+        abstraction, color_by = self.abstract(prototypes)
+        view = self.view(abstraction, selected_data=selected_data, color_values=color_by)
+        self.exe_time += time.time() - start
         self.mdp_counts += 1
 
-        return self.view(abstraction, selected_data), self.get_state()
+        return view, self.get_state()
+
 
     def get_state(self):
-        avg_time = 0
+        state = 't: 0.0s | stress: 0'
         if self.mdp_counts > 0:
-            avg_time = self.mdp_time/self.mdp_counts
+            t = self.exe_time/self.mdp_counts
+            stress = self.mdp.stress_
+            state = 't: {:10.2f}s | stress: {:10.0f}'.format(t, stress)
+            # divergence = self.mdp.kl_divergence_
+            # state = 't: {:10.2f}s | divergence: {:10.2f}'.format(t, divergence)
+        return state
 
-        return 'avg time: {:10.2f}s'.format(avg_time)
 
     def selected_ids(self, relayout_data):
         """
@@ -142,6 +156,7 @@ class Scatterplot:
         ys = proj[1]
         ks = np.arange(0, len(xs))
         return ks[(xs >= x1) & (xs <= x2) & (ys >= y1) & (ys <= y2)]
+
 
     def register_listener(self, app):
         @app.callback(
@@ -169,20 +184,21 @@ class ReachabilityPlot:
     def __init__(self):
         self.mdp = OPTICS()
         self.data = []
+        self.color_values = []
         self.model = None
-        self.mdp_time = 0
+        self.exe_time = 0
         self.mdp_counts = 0
         self.layout = dict(
-            width = 750, height = 280,
-            margin = {'l': 15, 't': 0},
+            width = 750, height = 260,
+            margin = {'l': 15, 't': 15},
             xaxis={'showticklabels': False, 'zeroline': False},
             dragmode='lasso'
         )
-        self.controls = html.Div(id='reachabilityplot-controls', className='ml-2', children=[
-            html.Button(type='button', className='btn btn-info dropdown-toggle btn-sm', **{'data-toggle': 'dropdown'}, children=[
-                html.Span(className='glyphicon glyphicon-cog', children='Reachability plot')
+        self.controls = html.Div(id='reachabilityplot-controls', className='input-group input-group-sm ml-2', children=[
+            html.Button(type='button', className='btn btn-info dropdown-toggle form-control', **{'data-toggle': 'dropdown'}, children=[
+                html.Span(className='glyphicon glyphicon-cog', children='OPTICS')
             ]),
-            html.Ul(className='dropdown-menu w-50', children=[
+            html.Ul(className='dropdown-menu w-100', children=[
                 html.Li(className='dropdown-header', children='Distance metric'),
                 html.Li(className='stop-propagation', children=[dcc.Dropdown(
                     id='optics-metric',
@@ -206,20 +222,30 @@ class ReachabilityPlot:
                     min=0, max=1, step=.05,
                     marks={x/10: '{}'.format(x/10) for x in range(0, 12, 2)}))
             ]),
+            html.Div(className='input-group-append', children=[
+                html.Span(id='reachplot-state', className='input-group-text', children=' - ')
+            ]),
             html.Div(id='optics-message', children='', className='alert alert-warning small', style={'display': 'none'})
         ])
 
+
     def abstract(self, prototypes):
         self.model = self.mdp.fit(prototypes)
-        return self.model.reachability_[self.model.ordering_]
+        color_values = np.var(prototypes, axis=1)
+        return self.model.reachability_[self.model.ordering_], color_values
 
-    def view(self, projection, selected_data):
-        indices = np.arange(0, len(projection))[self.model.ordering_]
+
+    def view(self, projection, selected_data=[], color_values=[]):
+        indices = self.model.ordering_
 
         figure_data = {
             'data': [go.Bar(
                 y = projection,
-                customdata = indices)],
+                customdata = indices,
+                marker = dict(
+                    color = color_values[indices],
+                    colorscale = 'sunsetdark'
+                ))],
             'layout': self.layout
         }
 
@@ -229,20 +255,25 @@ class ReachabilityPlot:
 
         return figure_data
 
+
     def visualize(self, prototypes=[], selected_data=[]):
         if len(prototypes) > 0:
             start = time.time()
-            self.data = self.abstract(prototypes)
-            self.mdp_time += time.time() - start
+            self.data, self.color_values = self.abstract(prototypes)
+            self.exe_time += time.time() - start
             self.mdp_counts += 1
 
-        return self.view(self.data, selected_data), self.get_state()
+        view = self.view(self.data, selected_data=selected_data, color_values=self.color_values)
+
+        return view, self.get_state()
+
 
     def get_state(self):
+        state = 't: 0.0s'
         if self.mdp_counts > 0:
-            return 't: {:10.2f}s'.format(self.mdp_time/self.mdp_counts)
-        else:
-            return 't: 0.0s'
+            state = 't: {:10.2f}s'.format(self.exe_time/self.mdp_counts)
+        return state
+
 
     def register_listener(self, app):
         @app.callback(
@@ -257,10 +288,12 @@ class ReachabilityPlot:
 
 class ParallelCoordinates:
     def __init__(self):
-        self.data = []
+        self.data = [],
+        self.color_values = []
+        self.min_spacing = 70
         self.layout = dict(
-            width = 750, height = 300,
-            margin = {'l': 15, 't': 0},
+            width = 700, height = 290,
+            margin = {'l': 20, 't': 40},
             xaxis_tickformat = '{:10.1f}'
         )
         self.controls = html.Div()
@@ -271,18 +304,28 @@ class ParallelCoordinates:
         if type(ks) is list:
             ks = np.array(ks)
         _, n_dim = ks.shape
-        n_dim = min(n_dim, 20)      # for the sake of testing.
-        return np.transpose(ks[:, :n_dim])
+        # n_dim = min(n_dim, 20)      # for the sake of testing.
+        return np.transpose(ks[:, :n_dim]), np.var(prototypes, axis=1)
 
-    def view(self, dimensions, selected_data):
+
+    def view(self, dimensions, selected_data=[], column_names=[], color_values=[]):
         indices = []
-        if len(dimensions) > 0:
+        n_dimensions = len(dimensions)
+
+        if n_dimensions > 0:
             indices = np.arange(0, len(dimensions[0]))
+            w1 = self.layout['width']
+            w2 = self.min_spacing * n_dimensions
+            self.layout['width'] = max(w1, w2)
+
+        if len(column_names) <= 0:
+            column_names = ['col_{}'.format(i) for i in indices]
 
         dim_elems = [dict(
-            range = [np.min(d), np.max(d)],
-            values = d
-        ) for d in dimensions]
+            # range = [np.min(d), np.max(d)],
+            values = d,
+            label = n
+        ) for (d, n) in zip(dimensions, column_names)]
 
         figure_data = {
             'data': [go.Parcoords(
@@ -301,16 +344,30 @@ class ParallelCoordinates:
                 'colorscale': [[0, 'lightgray'], [1, 'blue']]
             }
 
+        elif len(color_values) > 0:
+            figure_data['data'][0]['line'] = {
+                'color': color_values,
+                'colorscale': 'sunsetdark'
+            }
+
         return figure_data
 
-    def visualize(self, prototypes=[], selected_data=[]):
-        if len(prototypes) > 0:
-            self.data = self.abstract(prototypes)
 
-        return self.view(self.data, selected_data), self.get_state()
+    def visualize(self, prototypes=[], selected_data=[], column_names=[]):
+        if len(prototypes) > 0:
+            self.data, self.color_values = self.abstract(prototypes)
+
+        view = self.view(self.data,
+            selected_data=selected_data,
+            column_names=column_names,
+            color_values=self.color_values)
+
+        return view, self.get_state()
+
 
     def get_state(self):
         return ''
+
 
     def register_listener(self, app):
         pass

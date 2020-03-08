@@ -1,0 +1,8 @@
+.dropdown-menu{
+  min-width: 200px
+}
+
+.width-750 {
+  width: 750px;
+  overflow: auto;
+}

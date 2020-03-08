@@ -17,31 +17,24 @@ from numpy.linalg import norm
 class MiniBatchKMeans:
     def __init__(self):
         self.spawns = []
-        self.fitting_time = 0
+        self.exe_time = 0
         self.sample_count = 0
-
         self.optimizer = cluster.MiniBatchKMeans(
             n_clusters=200,
             random_state=None,
             batch_size=500,
             reassignment_ratio=.01)
 
-        self.controls = html.Div(id='kmeans-controls', className='ml-2', children=[
-            html.Button(type='button', className='btn btn-info dropdown-toggle btn-sm', **{'data-toggle': 'dropdown'}, children=[
+        self.controls = html.Div(id='kmeans-controls', className='input-group input-group-sm ml-2', children=[
+            html.Button(type='button', className='btn btn-info dropdown-toggle form-control', **{'data-toggle': 'dropdown'}, children=[
                 html.Span(className='glyphicon glyphicon-cog', children='Quantizer')
             ]),
-            html.Ul(className='dropdown-menu w-50', children=[
+            html.Ul(className='dropdown-menu w-100', children=[
                 html.Li(className='dropdown-header', children='# of prototypes'),
                 html.Li(children=dcc.Slider(
                     id='prototypes', value=self.optimizer.n_clusters,
                     min=100, max=500, step=10,
                     marks={x: '{}'.format(x) for x in range(100, 600, 100)})),
-
-                html.Li(className='dropdown-header', children='Batch size'),
-                html.Li(children=dcc.Slider(
-                    id='batch-size', value=self.optimizer.batch_size,
-                    min=0, max=1000, step=50,
-                    marks={x: '{}'.format(x) for x in range(0, 1200, 200)})),
 
                 html.Li(className='dropdown-header', children='Reassignment ratio'),
                 html.Li(children=dcc.Slider(
@@ -49,8 +42,12 @@ class MiniBatchKMeans:
                     min=0, max=1, step=.01,
                     marks={x/10: '{}'.format(x/10) for x in range(0, 12, 2)}))
             ]),
+            html.Div(className="input-group-append", children=[
+                html.Span(id='quantizer-state', className='input-group-text', children=' - ')
+            ]),
             html.Div(id='kmeans-message', children='', className='alert alert-warning small', style={'display': 'none'})
         ])
+
 
     def learn(self, sample):
         """
@@ -58,20 +55,26 @@ class MiniBatchKMeans:
         If the sample size is larged than the number of prototypes, then just
         return the sample.
         """
+        m = []
+
         if len(sample) > self.optimizer.n_clusters:
             start = time.time()
             self.optimizer = self.optimizer.partial_fit(sample)
-            self.fitting_time += time.time() - start
+            self.exe_time += time.time() - start
             self.sample_count += 1
-            return self.get_prototypes()
+            m = self.get_prototypes()
         else:
-            return sample
+            m = sample
+
+        return m, self.get_state()
+
 
     def reset(self):
         """
         Clears the values of the partially trained model.
         """
         self.optimizer = cluster.MiniBatchKMeans(**self.optimizer.get_params(deep=False))
+
 
     def get_prototypes(self):
         """
@@ -83,16 +86,18 @@ class MiniBatchKMeans:
         ns = norm(ks, axis=1)
         ns = (ns != np.min(ns)) & (ns != np.max(ns))
         return ks[ns]
-        # return self.optimizer.cluster_centers_
+
 
     def get_state(self):
         """
         Returns a string with a state message.
         """
+        state = 't: 0.0s | inertia: 0'
         if self.sample_count > 0:
-            return 't: {:10.2f}s'.format(self.fitting_time/self.sample_count)
-        else:
-            return 't: 0.0s'
+            t = self.exe_time/self.sample_count
+            inertia = self.optimizer.inertia_
+            state = 't: {:10.2f}s | inertia: {:10.0f}'.format(t, inertia)
+        return state
 
 
     def spawn(self):
@@ -115,37 +120,36 @@ class MiniBatchKMeans:
 
 
     def predict_select(self, data, select_ks):
-        predictions = self.predict(data).reshape(len(data), 1)
-        k_data = np.append(predictions, data.values, axis=1)
-        k_data = pd.DataFrame(k_data)
-        return k_data.loc[k_data[0].isin(select_ks)].drop(0, axis=1)
+        # Pandas DataFrame.
+        if type(data) is pd.core.frame.DataFrame:
+            predictions = self.predict(data).reshape(len(data), 1)
+            k_data = np.append(predictions, data.values, axis=1)
+            k_data = pd.DataFrame(k_data)
+            return k_data.loc[k_data[0].isin(select_ks)].drop(0, axis=1)
 
+        # Spark DataFrame.
+        else:
+            ks = self.get_prototypes()
+            def is_selected(arr):
+                distances = np.sqrt(norm(np.power(arr - ks, 2), axis=1))
+                kid = np.argmin(distances)
+                return (kid in select_ks)
 
-    def predict_select_spark(self, data, select_ks):
-        ks = self.get_prototypes()
-
-        def is_selected(arr):
-            distances = np.sqrt(norm(np.power(arr - ks, 2), axis=1))
-            kid = np.argmin(distances)
-            return (kid in select_ks)
-
-        is_selected_udf = udf(is_selected, BooleanType())
-        cols = data.columns
-        return data.filter(is_selected_udf(array(*cols))).cache()
+            is_selected_udf = udf(is_selected, BooleanType())
+            cols = data.columns
+            return data.filter(is_selected_udf(array(*cols))).cache()
 
 
     def register_listener(self, app):
         @app.callback(Output('kmeans-message', 'children'),
             [Input('prototypes', 'value'),
-            Input('batch-size', 'value'),
             Input('reassignment-ratio', 'value')])
-        def kmeans_listener(n_prototypes, batch_size, reassignment_ratio):
+        def kmeans_listener(n_prototypes, reassignment_ratio):
             if hasattr(self.optimizer, 'counts_') and n_prototypes != self.optimizer.n_clusters:
                 delattr(self.optimizer, 'counts_')
 
             self.optimizer.set_params(
                 n_clusters=n_prototypes,
-                batch_size=batch_size,
                 reassignment_ratio=reassignment_ratio)
 
             return 'params: {}'.format(str(self.optimizer.get_params(deep=False)))

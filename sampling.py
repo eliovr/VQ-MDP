@@ -14,16 +14,16 @@ class PandasSampler:
         self.spawns = []
         self.data = data
         self.sample_count = 0
-        self.sampling_time = 0
+        self.exe_time = 0
 
         self.sample_size = 500
-        self.sample_frequency = .05
+        self.sample_frequency = .02
 
-        self.controls = html.Div(id='sampler-controls', className='ml-2', children=[
-            html.Button(type='button', className='btn btn-info dropdown-toggle btn-sm', **{'data-toggle': 'dropdown'}, children=[
+        self.controls = html.Div(id='sampler-controls', className='input-group input-group-sm ml-2', children=[
+            html.Button(type='button', className='btn btn-info dropdown-toggle form-control', **{'data-toggle': 'dropdown'}, children=[
                 html.Span(className='glyphicon glyphicon-cog', children='Sampler')
             ]),
-            html.Ul(className='dropdown-menu w-50', children=[
+            html.Ul(className='dropdown-menu w-100', children=[
                 html.Li(className='dropdown-header', children='Sample size (# of points)'),
                 html.Li(children=dcc.Slider(
                     id='sample-size', value=self.sample_size,
@@ -36,33 +36,41 @@ class PandasSampler:
                     min=0, max=1, step=.05,
                     marks={x/10: '{}'.format(x/10) for x in range(0, 12, 2)}))
             ]),
+            html.Div(className='input-group-append', children=[
+                html.Span(id='sampler-state', className='input-group-text', children=' - ')
+            ]),
+
             html.Div(id='sampler-message', children='', className='alert alert-warning small', style={'display': 'none'})
         ])
 
 
     def sample(self):
+        xs = []
+
         if self.sample_frequency > 0:
             time.sleep(self.sample_frequency)
 
         if len(self.data.index) > self.sample_size:
             start = time.time()
-            x = self.data.sample(n=self.sample_size).values
-            self.sampling_time += time.time()
+            xs = self.data.sample(n=self.sample_size).values
+            self.exe_time += time.time() - start
             self.sample_count += 1
-            return x
         else:
-            return self.data.values
+            xs = self.data.values
+
+        return xs, self.get_state()
 
     def get_state(self):
+        state = 't: 0.00s | samples: 000'
         if self.sample_count > 0:
-            return 't: {:10.2f}s'.format(self.sampling_time / self.sample_count)
-        else:
-            return 't: 0.0s'
-        # return 'samples: {}; spawns: {}'.format(self.sample_count, len(self.spawns))
+            t = self.exe_time / self.sample_count
+            state = 't: {:10.3f}s | samples: {}'.format(t, self.sample_count)
+
+        return state
 
     def reset(self):
         self.sample_count = 0
-        self.sampling_time = 0
+        self.exe_time = 0
         if len(self.spawns) > 0:
             self.unspawn()
 
@@ -79,7 +87,6 @@ class PandasSampler:
     def unspawn(self):
         if len(self.spawns) > 0:
             parent = self.spawns.pop()
-            self.data.unpersist()
             self.data = parent['data']
             self.sample_count = parent['sample_count']
         return self
@@ -100,17 +107,17 @@ class SparkSampler:
         self.data = data
         self.data_size = data.count()
         self.sample_count = 0
-        self.sampling_time = 0
+        self.exe_time = 0
 
         self.sample_size = 500
-        self.sample_frequency = .05
+        self.sample_frequency = .0
         self.sample_fraction = self.sample_size / self.data_size
 
-        self.controls = html.Div(id='sampler-controls', className='ml-2', children=[
-            html.Button(type='button', className='btn btn-info dropdown-toggle btn-sm', **{'data-toggle': 'dropdown'}, children=[
+        self.controls = html.Div(id='sampler-controls', className='input-group input-group-sm ml-2', children=[
+            html.Button(type='button', className='btn btn-info dropdown-toggle form-control', **{'data-toggle': 'dropdown'}, children=[
                 html.Span(className='glyphicon glyphicon-cog', children='Sampler')
             ]),
-            html.Ul(className='dropdown-menu w-50', children=[
+            html.Ul(className='dropdown-menu w-100', children=[
                 html.Li(className='dropdown-header', children='Sample size (# of points)'),
                 html.Li(children=dcc.Slider(
                     id='sample-size', value=self.sample_size,
@@ -123,6 +130,10 @@ class SparkSampler:
                     min=0, max=1, step=.05,
                     marks={x/10: '{}'.format(x/10) for x in range(0, 12, 2)}))
             ]),
+            html.Div(className='input-group-append', children=[
+                html.Span(id='sampler-state', className='input-group-text', children=' - ')
+            ]),
+
             html.Div(id='sampler-message', children='', className='alert alert-warning small', style={'display': 'none'})
         ])
 
@@ -136,20 +147,21 @@ class SparkSampler:
         if 0 < self.sample_fraction < 1:
             xs = self.data.sample(withReplacement=False, fraction=self.sample_fraction)
         xs = xs.take(self.sample_size)
-        self.sampling_time += time.time() - start
+        self.exe_time += time.time() - start
         self.sample_count += 1
-        return xs
+        return xs, self.get_state()
 
     def get_state(self):
+        state = 't: 0.00s | samples: 000'
         if self.sample_count > 0:
-            t = self.sampling_time / self.sample_count
-            return 't: {:10.2f}s, data size: {}, sample size: {}, fraction: {:1.5f}'.format(t, self.data_size, self.sample_size, self.sample_fraction)
-        else:
-            return 't: 0.0s'
+            t = self.exe_time / self.sample_count
+            state = 't: {:10.2f}s | samples: {}'.format(t, self.sample_count)
+
+        return state
 
     def reset(self):
         self.sample_count = 0
-        self.sampling_time = 0
+        self.exe_time = 0
         if len(self.spawns) > 0:
             self.unspawn()
 
@@ -172,6 +184,7 @@ class SparkSampler:
     def unspawn(self):
         if len(self.spawns) > 0:
             parent = self.spawns.pop()
+            self.data.unpersist()
             self.data = parent['data']
             self.sample_count = parent['sample_count']
             self.data_size = parent['data_size']

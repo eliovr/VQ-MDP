@@ -13,29 +13,42 @@ from pyspark.sql.types import *
 
 import pandas as pd
 import numpy as np
-import json
+import json, time
 
+
+# data_path = '/home/elio/datasets/expressions_parquet'
+# data_path = '/home/elio/datasets/gas_sensor_parquet'
+# data_path = '/home/elio/datasets/biometrics_parquet'
+# data_path = '/home/elio/datasets/gsod_parquet'
+# data_path = '/home/elio/datasets/chembl_parquet_scaled'
+# data = spark.read.parquet(data_path).drop('hba', 'hbd', 'hba_lipinski', 'hdb_lipinski', 'num_lipinski_ro5_violations', 'rtb', 'num_ro5_violations', 'num_alerts')
+
+data_path = '/home/elio/datasets/emtab6961_parquet'
+use_spark = True
+data = None
+sampler = None
+exe_time = .0
+
+if use_spark:
+    spark = SparkSession.builder.appName("VQ-MDP").getOrCreate()
+    # spark = SparkSession.builder.config('spark.sql.codegen.wholeStage', 'false').appName("VQ-MDP").getOrCreate()
+    data = spark.read.parquet(data_path)
+    sampler = SparkSampler(data=data)
+else:
+    data = pd.read_csv(data_path)
+    data = data[data.columns[1:-1]]
+    sampler = PandasSampler(data=data)
+
+quantizer = MiniBatchKMeans()
+scatterplot = Scatterplot()
+parcoor = ParallelCoordinates()
+reachplot = ReachabilityPlot()
 
 class States:
     STOP = 0
     TRAIN_UPDATE_LOOP = 1
     TRAIN_UPDATE_ONCE = 2
     UPDATE_STOP = 3
-
-# data = pd.read_csv('/home/elio/apps/notebooks/data/isolet.csv', header=None)
-
-spark = SparkSession.builder.appName("VQ-MDP").getOrCreate()
-
-data_path = '/home/elio/datasets/gas_sensor_parquet3'
-data = spark.read.parquet(data_path)
-# data = spark.read.parquet(data_path).rdd.map(lambda r: np.array(list(r.asDict().values())))
-
-# sampler = Sampler(data=data)
-sampler = SparkSampler(data=data)
-quantizer = MiniBatchKMeans()
-scatterplot = Scatterplot()
-parcoor = ParallelCoordinates()
-reachplot = ReachabilityPlot()
 
 
 external_scripts = [
@@ -72,29 +85,31 @@ app.layout = html.Div(className='container', style={'margin-top': '10px'}, child
         html.Div(id='dragmode-state', children='lasso'),
     ]),
 
-    html.Div(className='row', children=[
-        html.Div(id='controls', className='form-inline col-7', children=[
+    html.Div(className='row form-inline col-12', children=[
             html.Div(className='btn-group', children=[
                 html.Button('Reset', id='button-reset', type='button', className='btn btn-light', n_clicks=0),
                 html.Button('Run', id='button-run', type='button', className='btn btn-secondary', n_clicks=0)
             ]),
-            sampler.controls, quantizer.controls, scatterplot.controls, reachplot.controls
-        ])
+            sampler.controls, quantizer.controls, scatterplot.controls, reachplot.controls,
+            html.Small(id='message-board', children='')
     ]),
 
-    html.Div(id='graphs', className='row', children=[
+    html.Div(id='graphs', className='row ml-2', children=[
         html.Div(className='col-6', children=[
             dcc.Graph(id='scatterplot-graph', figure={'layout': scatterplot.layout})]),
 
         html.Div(className='col-6', children=[
-            dcc.Graph(id='reachplot-graph', style={'height': '250px'}, figure={'layout': reachplot.layout}),
-            dcc.Graph(id='parcoor-graph', figure={'layout': parcoor.layout})
+            dcc.Graph(id='reachplot-graph', style={'height': '250px', 'margin-bottom': '-25px'}, figure={'layout': reachplot.layout}),
+            dcc.Graph(id='parcoor-graph', className="width-750", figure={'layout': parcoor.layout})
         ])
     ]),
 
-    html.Div(id='state', className='col-12', children=[
-        html.Div(id='message-board', children='', className='alert alert-warning small')
-    ])
+    # html.Button('Explain', id='button-explain', type='button', className='btn btn-warning', n_clicks=0),
+    # html.Div(id='explanation-board', children='', className='alert alert-warning small'),
+
+    # html.Div(id='state', className='col-12', style={'display': 'none'}, children=[
+    #     html.Div(id='message-board', children='', className='alert alert-warning small')
+    # ])
 ])
 
 sampler.register_listener(app)
@@ -121,40 +136,76 @@ def btn_run_clicked(clicks, hidden_state):
     Output('button-run', 'n_clicks'),
     [Input('button-reset', 'n_clicks')])
 def btn_reset_clicked(clicks):
+    global exe_time
     if clicks > 0:
         quantizer.reset()
         sampler.reset()
+        exe_time = .0
         return -1
 
     return dash.no_update
+
+
+# @app.callback(
+#     Output('explanation-board', 'children'),
+#     [Input('button-explain', 'n_clicks')],
+#     [State('interaction-state', 'children')])
+# def btn_reset_clicked(clicks, selection):
+#     selected_data = json.loads(selection)
+#     explanation = ''
+#
+#     if len(selected_data) > 0:
+#         X = quantizer.get_prototypes()
+#         y = np.arange(0, len(X))
+#         y = np.isin(y, selected_data)
+#         # explanation = 'y: {}, s: {}'.format(y, selected_data)
+#         model = RuleListClassifier(max_iter=1000, class1label="selected", verbose=False)
+#         model.fit(X, y)
+#         explanation = model
+#
+#     return explanation
 
 @app.callback(
     [Output('scatterplot-graph', 'figure'),
     Output('reachplot-graph', 'figure'),
     Output('parcoor-graph', 'figure'),
     Output('training-state-container', 'children'),
-    Output('message-board', 'children')],
+    Output('message-board', 'children'),
+
+    Output('sampler-state', 'children'),
+    Output('quantizer-state', 'children'),
+    Output('scatterplot-state', 'children'),
+    Output('reachplot-state', 'children')],
+
     [Input('hidden-state', 'children'),
     Input('interaction-state', 'children')])
 def traing_and_update(hidden_state, selection):
+    global exe_time
     next_state = dash.no_update
     sp_graph = dash.no_update
     rp_graph = dash.no_update
     pc_graph = dash.no_update
-    sp_state = scatterplot.get_state()
-    rp_state = reachplot.get_state()
-    pc_state = parcoor.get_state()
+    sampler_state = dash.no_update
+    quantizer_state = dash.no_update
+    sp_state = dash.no_update
+    rp_state = dash.no_update
+    state_msg = ''
     selected_data = []
+    cols = data.columns
 
-    if selection: selected_data = json.loads(selection)
+    if selection:
+        selected_data = json.loads(selection)
 
     if (hidden_state in (States.TRAIN_UPDATE_LOOP, States.TRAIN_UPDATE_ONCE)
         or (len(sampler.spawns) > 0 and sampler.sample_count == 0)):
-        x = sampler.sample()
-        m = quantizer.learn(x)
+
+        start = time.time()
+        x, sampler_state = sampler.sample()
+        m, quantizer_state = quantizer.learn(x)
         sp_graph, sp_state = scatterplot.visualize(m, selected_data=selected_data)
-        pc_graph, pc_state = parcoor.visualize(m, selected_data=selected_data)
         rp_graph, rp_state = reachplot.visualize(m, selected_data=selected_data)
+        pc_graph, _ = parcoor.visualize(m, selected_data=selected_data, column_names=cols)
+        exe_time += time.time() - start
 
         if hidden_state == States.TRAIN_UPDATE_LOOP:
             next_state = html.Div(id='hidden-state', children=States.TRAIN_UPDATE_LOOP)
@@ -163,11 +214,17 @@ def traing_and_update(hidden_state, selection):
     elif sampler.sample_count > 0:
         sp_graph, sp_state = scatterplot.visualize(selected_data=selected_data)
         rp_graph, rp_state = reachplot.visualize(selected_data=selected_data)
-        pc_graph, pc_state = parcoor.visualize(selected_data=selected_data)
+        pc_graph, _ = parcoor.visualize(selected_data=selected_data, column_names=cols)
 
-    state = 'Sampler: {} | Quantizer: {} | MDS: {} | Reachplot: {}'.format(sampler.get_state(), quantizer.get_state(), scatterplot.get_state(), reachplot.get_state())
+    if exe_time > 0:
+        state_msg =  'Avg time: {:10.2f}'.format(exe_time / sampler.sample_count)
 
-    return sp_graph, rp_graph, pc_graph, next_state, state
+    return (sp_graph, rp_graph, pc_graph, next_state,
+        state_msg,
+        sampler_state,
+        quantizer_state,
+        sp_state,
+        rp_state)
 
 
 @app.callback(
@@ -183,11 +240,12 @@ def user_interaction(lasso_selection, zoom_selection, rp_selection, parcoor_filt
     selected_data = '[]'
     dragmode_state = dash.no_update
 
-    # user made a lasso selection.
+    # user made a lasso selection in the scatterplot.
     if lasso_selection:
         selection = [p['customdata'] for p in lasso_selection['points']]
         selected_data = json.dumps(selection)
 
+    # user made a lasso selection in the reachabilityplot.
     elif rp_selection:
         selection = [p['customdata'] for p in rp_selection['points']]
         selected_data = json.dumps(selection)
@@ -199,7 +257,7 @@ def user_interaction(lasso_selection, zoom_selection, rp_selection, parcoor_filt
                 dragmode_state = zoom_selection['dragmode']
             selected_data = dash.no_update
 
-        # user is zooming in.
+        # user is zooming in or out.
         elif dragmode != 'zoomed-in':
             selected_data = '[]'
             dragmode_state = 'zoomed-in'
@@ -207,8 +265,7 @@ def user_interaction(lasso_selection, zoom_selection, rp_selection, parcoor_filt
             # user is zooming in.
             if 'xaxis.range[0]' in zoom_selection:
                 selected_ks = scatterplot.selected_ids(zoom_selection)
-                # zoomed_data = quantizer.predict_select(sampler.data, selected_ks)
-                zoomed_data = quantizer.predict_select_spark(sampler.data, selected_ks)
+                zoomed_data = quantizer.predict_select(sampler.data, selected_ks)
                 sampler.spawn(zoomed_data)
                 quantizer.spawn()
 
@@ -219,7 +276,7 @@ def user_interaction(lasso_selection, zoom_selection, rp_selection, parcoor_filt
                 m = quantizer.get_prototypes()
                 scatterplot.visualize(m)
                 reachplot.visualize(m)
-                # parcoor.visualize(m)
+                parcoor.visualize(m)
 
     return selected_data, dragmode_state
 
