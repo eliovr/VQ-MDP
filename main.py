@@ -85,21 +85,25 @@ app.layout = html.Div(className='container', style={'margin-top': '10px'}, child
         html.Div(id='dragmode-state', children='lasso'),
     ]),
 
-    html.Div(className='row form-inline col-12', children=[
-            html.Div(className='btn-group', children=[
-                html.Button('Reset', id='button-reset', type='button', className='btn btn-light', n_clicks=0),
-                html.Button('Run', id='button-run', type='button', className='btn btn-secondary', n_clicks=0)
+    html.Div(className='row form-inline col-12 mb-1', children=[
+            html.Div(className='btn-group mr-3', children=[
+                html.Button('Reset', id='button-reset', type='button', className='btn btn-secondary', n_clicks=0),
+                html.Button('Run', id='button-run', type='button', className='btn btn-light', n_clicks=0)
             ]),
-            sampler.controls, quantizer.controls, scatterplot.controls, reachplot.controls,
-            html.Small(id='message-board', children='')
+            sampler.controls, html.Small(id='sampler-state', className='mx-1 px-1 border', children=' - '),
+            quantizer.controls, html.Small(id='quantizer-state', className='mx-1 px-1 border', children=' - '),
+            html.Small(id='message-board', className='px-1 ml-2 float-right', children='')
     ]),
 
-    html.Div(id='graphs', className='row ml-2', children=[
+    html.Div(id='graphs', className='row', children=[
         html.Div(className='col-6', children=[
-            dcc.Graph(id='scatterplot-graph', figure={'layout': scatterplot.layout})]),
+            dcc.Graph(id='scatterplot-graph', figure={'layout': scatterplot.layout}),
+            scatterplot.controls, html.Small(id='scatterplot-state', className='mx-1 px-1 border', children=' - ')
+        ]),
 
         html.Div(className='col-6', children=[
-            dcc.Graph(id='reachplot-graph', style={'height': '250px', 'margin-bottom': '-25px'}, figure={'layout': reachplot.layout}),
+            reachplot.controls, html.Small(id='reachplot-state', className='mx-1 px-1 border', children=' - '),
+            dcc.Graph(id='reachplot-graph', style={'margin': '5px 0 -40px 0'}, figure={'layout': reachplot.layout}),
             dcc.Graph(id='parcoor-graph', className="width-750", figure={'layout': parcoor.layout})
         ])
     ]),
@@ -217,7 +221,7 @@ def traing_and_update(hidden_state, selection):
         pc_graph, _ = parcoor.visualize(selected_data=selected_data, column_names=cols)
 
     if exe_time > 0:
-        state_msg =  'Avg time: {:10.2f}'.format(exe_time / sampler.sample_count)
+        state_msg =  'Avg time (all): {:10.2f}s'.format(exe_time / sampler.sample_count)
 
     return (sp_graph, rp_graph, pc_graph, next_state,
         state_msg,

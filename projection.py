@@ -33,10 +33,8 @@ class Scatterplot:
             dragmode='lasso',
             clickmode='event+select'
         )
-        self.controls = html.Div(id='scatterplot-controls', className='input-group input-group-sm ml-2', children=[
-            html.Button(type='button', className='btn btn-info dropdown-toggle form-control', **{'data-toggle': 'dropdown'}, children=[
-                html.Span(className='glyphicon glyphicon-cog', children='MDS')
-            ]),
+        self.controls = html.Div(id='scatterplot-controls', style={'display': 'inline'}, children=[
+            html.Button(className='bg-warning rounded-pill px-2 border float-left', **{'data-toggle': 'dropdown'}, children='MDS'),
             html.Ul(className='dropdown-menu w-100', children=[
                 html.Li(className='dropdown-header', children='n init'),
                 html.Li(children=dcc.Slider(
@@ -70,9 +68,9 @@ class Scatterplot:
                     min=1, max=17, step=1,
                     marks={x: '{}'.format(x) for x in range(1, 18, 2)}))
             ]),
-            html.Div(className='input-group-append', children=[
-                html.Span(id='scatterplot-state', className='input-group-text', children=' - ')
-            ]),
+            # html.Div(className='input-group-append', children=[
+            #     html.Small(id='scatterplot-state', className='input-group-text', children=' - ')
+            # ]),
             html.Div(id='scatterplot-message', children='', className='alert alert-warning small', style={'display': 'none'})
         ])
 
@@ -132,11 +130,11 @@ class Scatterplot:
 
 
     def get_state(self):
-        state = 't: 0.0s | stress: 0'
+        state = 'Avg time: 0.0s | stress: 0'
         if self.mdp_counts > 0:
             t = self.exe_time/self.mdp_counts
             stress = self.mdp.stress_
-            state = 't: {:10.2f}s | stress: {:10.0f}'.format(t, stress)
+            state = 'Avg time: {:10.2f}s | stress: {:10.0f}'.format(t, stress)
             # divergence = self.mdp.kl_divergence_
             # state = 't: {:10.2f}s | divergence: {:10.2f}'.format(t, divergence)
         return state
@@ -194,10 +192,8 @@ class ReachabilityPlot:
             xaxis={'showticklabels': False, 'zeroline': False},
             dragmode='lasso'
         )
-        self.controls = html.Div(id='reachabilityplot-controls', className='input-group input-group-sm ml-2', children=[
-            html.Button(type='button', className='btn btn-info dropdown-toggle form-control', **{'data-toggle': 'dropdown'}, children=[
-                html.Span(className='glyphicon glyphicon-cog', children='OPTICS')
-            ]),
+        self.controls = html.Div(id='reachabilityplot-controls', style={'display': 'inline'}, children=[
+            html.Button(className='bg-warning rounded-pill px-2 border float-left', **{'data-toggle': 'dropdown'}, children='OPTICS'),
             html.Ul(className='dropdown-menu w-100', children=[
                 html.Li(className='dropdown-header', children='Distance metric'),
                 html.Li(className='stop-propagation', children=[dcc.Dropdown(
@@ -222,9 +218,9 @@ class ReachabilityPlot:
                     min=0, max=1, step=.05,
                     marks={x/10: '{}'.format(x/10) for x in range(0, 12, 2)}))
             ]),
-            html.Div(className='input-group-append', children=[
-                html.Span(id='reachplot-state', className='input-group-text', children=' - ')
-            ]),
+            # html.Div(className='input-group-append', children=[
+            #     html.Small(id='reachplot-state', className='input-group-text', children=' - ')
+            # ]),
             html.Div(id='optics-message', children='', className='alert alert-warning small', style={'display': 'none'})
         ])
 
@@ -269,9 +265,9 @@ class ReachabilityPlot:
 
 
     def get_state(self):
-        state = 't: 0.0s'
+        state = 'Avg time: 0.0s'
         if self.mdp_counts > 0:
-            state = 't: {:10.2f}s'.format(self.exe_time/self.mdp_counts)
+            state = 'Avg time: {:10.2f}s'.format(self.exe_time/self.mdp_counts)
         return state
 
 
@@ -322,7 +318,6 @@ class ParallelCoordinates:
             column_names = ['col_{}'.format(i) for i in indices]
 
         dim_elems = [dict(
-            # range = [np.min(d), np.max(d)],
             values = d,
             label = n
         ) for (d, n) in zip(dimensions, column_names)]
@@ -341,7 +336,7 @@ class ParallelCoordinates:
             lines.loc[lines['key'].isin(selected_data), 'selected'] = 1
             figure_data['data'][0]['line'] = {
                 'color': lines['selected'],
-                'colorscale': [[0, 'lightgray'], [1, 'blue']]
+                'colorscale': [[0, 'lightgray'], [1, 'purple']]
             }
 
         elif len(color_values) > 0:

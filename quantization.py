@@ -25,10 +25,8 @@ class MiniBatchKMeans:
             batch_size=500,
             reassignment_ratio=.01)
 
-        self.controls = html.Div(id='kmeans-controls', className='input-group input-group-sm ml-2', children=[
-            html.Button(type='button', className='btn btn-info dropdown-toggle form-control', **{'data-toggle': 'dropdown'}, children=[
-                html.Span(className='glyphicon glyphicon-cog', children='Quantizer')
-            ]),
+        self.controls = html.Div(id='kmeans-controls', className='ml-2', children=[
+            html.Button(className='bg-warning rounded-pill px-2 border float-left', **{'data-toggle': 'dropdown'}, children='Quantizer'),
             html.Ul(className='dropdown-menu w-100', children=[
                 html.Li(className='dropdown-header', children='# of prototypes'),
                 html.Li(children=dcc.Slider(
@@ -41,9 +39,6 @@ class MiniBatchKMeans:
                     id='reassignment-ratio', value=self.optimizer.reassignment_ratio,
                     min=0, max=1, step=.01,
                     marks={x/10: '{}'.format(x/10) for x in range(0, 12, 2)}))
-            ]),
-            html.Div(className="input-group-append", children=[
-                html.Span(id='quantizer-state', className='input-group-text', children=' - ')
             ]),
             html.Div(id='kmeans-message', children='', className='alert alert-warning small', style={'display': 'none'})
         ])
@@ -92,11 +87,11 @@ class MiniBatchKMeans:
         """
         Returns a string with a state message.
         """
-        state = 't: 0.0s | inertia: 0'
+        state = 'Avg time: 0.0s | inertia: 0'
         if self.sample_count > 0:
             t = self.exe_time/self.sample_count
             inertia = self.optimizer.inertia_
-            state = 't: {:10.2f}s | inertia: {:10.0f}'.format(t, inertia)
+            state = 'Avg time: {:10.2f}s | inertia: {:10.0f}'.format(t, inertia)
         return state
 
 

@@ -20,7 +20,7 @@ class PandasSampler:
         self.sample_frequency = .02
 
         self.controls = html.Div(id='sampler-controls', className='input-group input-group-sm ml-2', children=[
-            html.Button(type='button', className='btn btn-info dropdown-toggle form-control', **{'data-toggle': 'dropdown'}, children=[
+            html.Button(type='button', className='btn btn-secondary dropdown-toggle form-control', **{'data-toggle': 'dropdown'}, children=[
                 html.Span(className='glyphicon glyphicon-cog', children='Sampler')
             ]),
             html.Ul(className='dropdown-menu w-100', children=[
@@ -37,7 +37,7 @@ class PandasSampler:
                     marks={x/10: '{}'.format(x/10) for x in range(0, 12, 2)}))
             ]),
             html.Div(className='input-group-append', children=[
-                html.Span(id='sampler-state', className='input-group-text', children=' - ')
+                html.Small(id='sampler-state', className='input-group-text', children=' - ')
             ]),
 
             html.Div(id='sampler-message', children='', className='alert alert-warning small', style={'display': 'none'})
@@ -113,10 +113,8 @@ class SparkSampler:
         self.sample_frequency = .0
         self.sample_fraction = self.sample_size / self.data_size
 
-        self.controls = html.Div(id='sampler-controls', className='input-group input-group-sm ml-2', children=[
-            html.Button(type='button', className='btn btn-info dropdown-toggle form-control', **{'data-toggle': 'dropdown'}, children=[
-                html.Span(className='glyphicon glyphicon-cog', children='Sampler')
-            ]),
+        self.controls = html.Div(id='sampler-controls', children=[
+            html.Button(className='bg-warning rounded-pill px-2 border float-left', **{'data-toggle': 'dropdown'}, children='Sampler'),
             html.Ul(className='dropdown-menu w-100', children=[
                 html.Li(className='dropdown-header', children='Sample size (# of points)'),
                 html.Li(children=dcc.Slider(
@@ -129,9 +127,6 @@ class SparkSampler:
                     id='sample-frequency', value=self.sample_frequency,
                     min=0, max=1, step=.05,
                     marks={x/10: '{}'.format(x/10) for x in range(0, 12, 2)}))
-            ]),
-            html.Div(className='input-group-append', children=[
-                html.Span(id='sampler-state', className='input-group-text', children=' - ')
             ]),
 
             html.Div(id='sampler-message', children='', className='alert alert-warning small', style={'display': 'none'})
@@ -152,10 +147,10 @@ class SparkSampler:
         return xs, self.get_state()
 
     def get_state(self):
-        state = 't: 0.00s | samples: 000'
+        state = 'Avg time: 0.00s | samples: 000'
         if self.sample_count > 0:
             t = self.exe_time / self.sample_count
-            state = 't: {:10.2f}s | samples: {}'.format(t, self.sample_count)
+            state = 'Avg time: {:10.2f}s | samples: {}'.format(t, self.sample_count)
 
         return state
 
