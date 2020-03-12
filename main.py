@@ -13,31 +13,31 @@ from pyspark.sql.types import *
 
 import pandas as pd
 import numpy as np
-import json, time
+import json, time, argparse
 
 
-# data_path = '/home/elio/datasets/expressions_parquet'
-# data_path = '/home/elio/datasets/gas_sensor_parquet'
-# data_path = '/home/elio/datasets/biometrics_parquet'
-# data_path = '/home/elio/datasets/gsod_parquet'
-# data_path = '/home/elio/datasets/chembl_parquet_scaled'
-# data = spark.read.parquet(data_path).drop('hba', 'hbd', 'hba_lipinski', 'hdb_lipinski', 'num_lipinski_ro5_violations', 'rtb', 'num_ro5_violations', 'num_alerts')
+parser = argparse.ArgumentParser(description='VQ-MDP: Progressive Multidimensional Projections')
+parser.add_argument('input_path', help='Input file or folder')
+parser.add_argument('--sampler', help='Choices are "pandas or "spark" (default)')
+args = parser.parse_args()
+input_path = args.input_path
+sampler_type = args.sampler
 
-data_path = '/home/elio/datasets/emtab6961_parquet'
-use_spark = True
 data = None
 sampler = None
 exe_time = .0
 
-if use_spark:
-    spark = SparkSession.builder.appName("VQ-MDP").getOrCreate()
-    # spark = SparkSession.builder.config('spark.sql.codegen.wholeStage', 'false').appName("VQ-MDP").getOrCreate()
-    data = spark.read.parquet(data_path)
-    sampler = SparkSampler(data=data)
-else:
-    data = pd.read_csv(data_path)
+if sampler_type == 'pandas':
+    data = pd.read_csv(input_path)
     data = data[data.columns[1:-1]]
     sampler = PandasSampler(data=data)
+
+else:
+    spark = SparkSession.builder.appName("VQ-MDP").getOrCreate()
+    # spark = SparkSession.builder.config('spark.sql.codegen.wholeStage', 'false').appName("VQ-MDP").getOrCreate()
+    data = spark.read.parquet(input_path)
+    sampler = SparkSampler(data=data)
+
 
 quantizer = MiniBatchKMeans()
 scatterplot = Scatterplot()
@@ -241,18 +241,18 @@ def traing_and_update(hidden_state, selection):
     [State('dragmode-state', 'children'),
     State('interaction-state', 'children')])
 def user_interaction(lasso_selection, zoom_selection, rp_selection, parcoor_filter, dragmode, selection_state):
-    selected_data = '[]'
+    selected_data = []
     dragmode_state = dash.no_update
 
     # user made a lasso selection in the scatterplot.
     if lasso_selection:
         selection = [p['customdata'] for p in lasso_selection['points']]
-        selected_data = json.dumps(selection)
+        selected_data = selection
 
     # user made a lasso selection in the reachabilityplot.
     elif rp_selection:
         selection = [p['customdata'] for p in rp_selection['points']]
-        selected_data = json.dumps(selection)
+        selected_data = selection
 
     elif zoom_selection:
         # user is changing interaction tool in scatterplot.
@@ -263,7 +263,7 @@ def user_interaction(lasso_selection, zoom_selection, rp_selection, parcoor_filt
 
         # user is zooming in or out.
         elif dragmode != 'zoomed-in':
-            selected_data = '[]'
+            selected_data = []
             dragmode_state = 'zoomed-in'
 
             # user is zooming in.
@@ -282,7 +282,7 @@ def user_interaction(lasso_selection, zoom_selection, rp_selection, parcoor_filt
                 reachplot.visualize(m)
                 parcoor.visualize(m)
 
-    return selected_data, dragmode_state
+    return json.dumps(selected_data), dragmode_state
 
 
 if __name__ == '__main__':

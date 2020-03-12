@@ -17,6 +17,7 @@ from numpy.linalg import norm
 class MiniBatchKMeans:
     def __init__(self):
         self.spawns = []
+        self.iter_sample = 10
         self.exe_time = 0
         self.sample_count = 0
         self.optimizer = cluster.MiniBatchKMeans(
@@ -28,11 +29,17 @@ class MiniBatchKMeans:
         self.controls = html.Div(id='kmeans-controls', className='ml-2', children=[
             html.Button(className='bg-warning rounded-pill px-2 border float-left', **{'data-toggle': 'dropdown'}, children='Quantizer'),
             html.Ul(className='dropdown-menu w-100', children=[
-                html.Li(className='dropdown-header', children='# of prototypes'),
+                html.Li(className='dropdown-header', children='Number of prototypes'),
                 html.Li(children=dcc.Slider(
                     id='prototypes', value=self.optimizer.n_clusters,
                     min=100, max=500, step=10,
                     marks={x: '{}'.format(x) for x in range(100, 600, 100)})),
+
+                html.Li(className='dropdown-header', children='Iterations per sample'),
+                html.Li(children=dcc.Slider(
+                    id='kmeans-iterations', value=self.iter_sample,
+                    min=1, max=30, step=1,
+                    marks={x: '{}'.format(x) for x in range(0, 35, 5)})),
 
                 html.Li(className='dropdown-header', children='Reassignment ratio'),
                 html.Li(children=dcc.Slider(
@@ -54,7 +61,8 @@ class MiniBatchKMeans:
 
         if len(sample) > self.optimizer.n_clusters:
             start = time.time()
-            self.optimizer = self.optimizer.partial_fit(sample)
+            for i in range(0, self.iter_sample):
+                self.optimizer.partial_fit(sample)
             self.exe_time += time.time() - start
             self.sample_count += 1
             m = self.get_prototypes()
@@ -138,13 +146,15 @@ class MiniBatchKMeans:
     def register_listener(self, app):
         @app.callback(Output('kmeans-message', 'children'),
             [Input('prototypes', 'value'),
+            Input('kmeans-iterations', 'value'),
             Input('reassignment-ratio', 'value')])
-        def kmeans_listener(n_prototypes, reassignment_ratio):
+        def kmeans_listener(n_prototypes, iter_sample, reassignment_ratio):
             if hasattr(self.optimizer, 'counts_') and n_prototypes != self.optimizer.n_clusters:
                 delattr(self.optimizer, 'counts_')
 
             self.optimizer.set_params(
                 n_clusters=n_prototypes,
                 reassignment_ratio=reassignment_ratio)
+            self.iter_sample = iter_sample
 
             return 'params: {}'.format(str(self.optimizer.get_params(deep=False)))
