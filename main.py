@@ -259,7 +259,8 @@ def user_interaction(lasso_selection, zoom_selection, rp_selection, parcoor_filt
         if 'dragmode' in zoom_selection:
             if zoom_selection['dragmode'] != dragmode:
                 dragmode_state = zoom_selection['dragmode']
-            selected_data = dash.no_update
+            #selected_data = dash.no_update
+            return dash.no_update, dragmode_state
 
         # user is zooming in or out.
         elif dragmode != 'zoomed-in':
